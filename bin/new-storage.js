@@ -17,13 +17,19 @@ if (!imageUrl) {
 
 // Get the root directory (parent of bin/)
 const rootDir = path.join(__dirname, '..');
+const itemsDir = path.join(rootDir, 'items');
+
+// Ensure items directory exists
+if (!fs.existsSync(itemsDir)) {
+  fs.mkdirSync(itemsDir, { recursive: true });
+}
 
 // Count existing numbered folders
 function getNextFolderNumber() {
-  const items = fs.readdirSync(rootDir);
+  const items = fs.readdirSync(itemsDir);
   const numbers = items
     .filter(item => {
-      const fullPath = path.join(rootDir, item);
+      const fullPath = path.join(itemsDir, item);
       return fs.statSync(fullPath).isDirectory() && /^\d+$/.test(item);
     })
     .map(item => parseInt(item, 10));
@@ -36,7 +42,21 @@ function downloadImage(url, destination) {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https') ? https : http;
     
-    protocol.get(url, (response) => {
+    const options = {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Referer': url,
+        'Connection': 'keep-alive',
+        'Sec-Fetch-Dest': 'image',
+        'Sec-Fetch-Mode': 'no-cors',
+        'Sec-Fetch-Site': 'cross-site'
+      }
+    };
+    
+    protocol.get(url, options, (response) => {
       if (response.statusCode === 302 || response.statusCode === 301) {
         // Handle redirects
         downloadImage(response.headers.location, destination)
@@ -71,7 +91,7 @@ function downloadImage(url, destination) {
   try {
     // Get next folder number
     const nextNumber = getNextFolderNumber();
-    const newFolderPath = path.join(rootDir, nextNumber.toString());
+    const newFolderPath = path.join(itemsDir, nextNumber.toString());
     
     // Create new folder
     fs.mkdirSync(newFolderPath, { recursive: true });
@@ -91,11 +111,11 @@ function downloadImage(url, destination) {
     
     // Remove temporary file
     fs.unlinkSync(tempPath);
-    console.log(`Image saved to: ${nextNumber}/1.jpg`);
+    console.log(`Image saved to: items/${nextNumber}/1.jpg`);
     
     // Git operations
     console.log('Adding to git...');
-    execSync(`git add ${nextNumber}`, { cwd: rootDir, stdio: 'inherit' });
+    execSync(`git add items/${nextNumber}`, { cwd: rootDir, stdio: 'inherit' });
     
     console.log('Committing...');
     execSync(`git commit -m "${nextNumber}"`, { cwd: rootDir, stdio: 'inherit' });
