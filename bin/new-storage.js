@@ -1,17 +1,79 @@
 #!/usr/bin/env node
 
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
-const http = require('http');
-const sharp = require('sharp');
-const { execSync } = require('child_process');
+import fs from 'fs';
+import path from 'path';
+import https from 'https';
+import http from 'http';
+import sharp from 'sharp';
+import { execSync } from 'child_process';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
-// Get image URL from command line argument
-const imageUrl = process.argv[2];
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Get image URL from command line argument or clipboard
+let imageUrl = process.argv[2];
+let clipboardImage = null;
 
 if (!imageUrl) {
-  console.error('Usage: node new-storage.js <image-url>');
+  console.log('No URL provided, reading from clipboard...');
+  try {
+    // Try to get image data from clipboard first
+    try {
+      const imageData = execSync('xclip -selection clipboard -t image/png -o', { 
+        encoding: null,
+        timeout: 1000,
+        stdio: ['pipe', 'pipe', 'ignore']
+      });
+      if (imageData && imageData.length > 0) {
+        console.log('Found image data in clipboard');
+        clipboardImage = imageData;
+      }
+    } catch {
+      // No image data, try text/URL
+      try {
+        imageUrl = execSync('xclip -selection clipboard -o', { 
+          encoding: 'utf8',
+          timeout: 1000
+        }).trim();
+        if (!imageUrl) {
+          console.error('Clipboard is empty!');
+          process.exit(1);
+        }
+        console.log(`Using URL from clipboard: ${imageUrl}`);
+      } catch {
+        // Fallback to xsel
+        try {
+          imageUrl = execSync('xsel --clipboard --output', { 
+            encoding: 'utf8',
+            timeout: 1000
+          }).trim();
+          if (!imageUrl) {
+            console.error('Clipboard is empty!');
+            process.exit(1);
+          }
+          console.log(`Using URL from clipboard: ${imageUrl}`);
+        } catch {
+          console.error('Failed to read clipboard. Please install xclip or xsel:');
+          console.error('  sudo apt-get install xclip');
+          console.error('  or');
+          console.error('  sudo apt-get install xsel');
+          process.exit(1);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('Failed to read clipboard:', error.message);
+    console.error('Usage: node new-storage.js <image-url>');
+    process.exit(1);
+  }
+}
+
+// Validate URL format if using URL
+if (imageUrl && !imageUrl.startsWith('http://') && !imageUrl.startsWith('https://')) {
+  console.error('Invalid URL. Must start with http:// or https://');
   process.exit(1);
 }
 
@@ -97,10 +159,19 @@ function downloadImage(url, destination) {
     fs.mkdirSync(newFolderPath, { recursive: true });
     console.log(`Created folder: ${nextNumber}`);
     
-    // Download to temporary location
-    const tempPath = path.join(newFolderPath, 'temp_download');
-    console.log(`Downloading image from: ${imageUrl}`);
-    await downloadImage(imageUrl, tempPath);
+    let tempPath;
+    
+    if (clipboardImage) {
+      // Save clipboard image directly
+      tempPath = path.join(newFolderPath, 'temp_clipboard.png');
+      fs.writeFileSync(tempPath, clipboardImage);
+      console.log('Saved image from clipboard');
+    } else {
+      // Download to temporary location
+      tempPath = path.join(newFolderPath, 'temp_download');
+      console.log(`Downloading image from: ${imageUrl}`);
+      await downloadImage(imageUrl, tempPath);
+    }
     
     // Convert to JPG and save as "1.jpg"
     const finalPath = path.join(newFolderPath, '1.jpg');
